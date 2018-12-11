@@ -143,6 +143,18 @@ def GetConsistent(lists, decodedM, decodedZ):
                 ans = tf.subtract(ans, tf.log(1 - GetP(i, i, decodedM, decodedZ)))
     return ans 
 
+def OutputFile(data):
+    filename = 'data/citeseer/output.embeddings'
+    with open(filename,'w') as f:
+        for i in range(len(data)):
+            f.write(number[i])
+            f.write(" ")
+            for j in range(len(data[i])):
+                f.write(str(data[i][j]))
+                f.write(" ")
+            f.write("\n")
+    f.close()
+
 # Construct model
 encoder_op = encoder(X)
 decoder_op = decoder(encoder_op)
@@ -181,7 +193,8 @@ with tf.Session() as sess:
         # Display logs per step
         #if i % display_step == 0 or i == 1:
         print('Step %i: Minibatch Loss: %f' % (i, l))
-
+    encoder_result = sess.run(encoder_op, feed_dict={X: G})
+    OutputFile(encoder_result.tolist())
     # Testing
     # Encode and decode images from test set and visualize their reconstruction.
     '''n = 4
