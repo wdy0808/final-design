@@ -134,6 +134,12 @@ def decoder(x):
     layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights['decoder_h5']), biases['decoder_b5']))
     return layer_5
 
+def GetSpecificVector(encoder_data, num, length):
+    t = [[0] * 64] * length
+    t[num] = [1] * 64 
+    tf.transpose(encoder_data)
+    return tf.reduce_sum(tf.mul(encoder_data, t), 0)
+
 def GetConsistent(lists, decodedM, decodedZ):
     ans = tf.add(tf.constant([0.]), tf.constant([0.]))
     for i in range(len(lists)):
@@ -166,7 +172,7 @@ y_true = X
 
 # Define loss and optimizer, minimize the squared error
 loss = tf.reduce_mean(tf.pow(y_true - y_pred, 2))
-loss = tf.add(loss, tf.reduce_mean(encoder_op))
+#Sloss = tf.add(loss, tf.reduce_mean([[1.0,2.0],[3.0,4.0]]))
 optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
 # Initialize the variables (i.e. assign their default value)
