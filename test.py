@@ -2,7 +2,6 @@ from __future__ import division, print_function, absolute_import
 
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
 from collections import defaultdict, Iterable
 
 # Import MNIST data
@@ -62,10 +61,40 @@ def load_citeseer_content(file):
                     }.get(line[i], 0))
     return G
 
+def load_edgelist(file_, undirected=True):
+    G = Graph()
+    with open(file_) as f:
+        for l in f:
+            x, y = l.strip().split()[:2]
+            x = G.node_int_value(x, False)
+            y = G.node_int_value(y, False)
+            if x != -1 & y != -1:
+                G[y].append(x)
+                if undirected:
+                    G[x].append(y)
+    
+    return G
+
+def GetTransitionMatrix(matrix, m):
+    m1 = np.array(matrix)
+    m2 = np.array(m)
+    return np.dot(m2, m1)
+
+def FromEToM(e, t):
+    ans = GetTransitionMatrix(e, e)
+    step = ans
+    for i in range(1, t):
+        step = GetTransitionMatrix(e, step.tolist())
+        ans = ans + step
+    return ans.tolist()
+
 A = load_citeseer_content("./data/citeseer/citeseer.content")
 print("Number of attribute structure nodes: {}".format(len(A.nodes())))
-G = A.ToMatrix(3709);
+G = A.ToMatrix(3709)
 
+Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=False)
+One_hot = Edge_graph.ToMatrix(len(number))
+M = FromEToM(One_hot, 10)
     
 # Training Parameters
 learning_rate = 0.01
@@ -134,11 +163,22 @@ def decoder(x):
     layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights['decoder_h5']), biases['decoder_b5']))
     return layer_5
 
-def GetSpecificVector(encoder_data, num, length):
-    t = [[0] * 64] * length
+def GetSpecificVector(encoder_data, num):
+    t = [[0] * 64] * len(number)
     t[num] = [1] * 64 
-    tf.transpose(encoder_data)
-    return tf.reduce_sum(tf.mul(encoder_data, t), 0)
+    return tf.reduce_sum(tf.multiply(encoder_data, t), 0)
+
+def GetFirstOrderP(encoder_data, i, j):
+    Hi = GetSpecificVector(encoder_data, i)
+    Hj = GetSpecificVector(encoder_data, j)
+    return tf.div(float(1), tf.add(float(1), tf.exp(tf.negative(tf.multiply(Hi, tf.transpose(Hj))))))
+
+def GetFirstOrder(encoder_data):
+    ans = tf.constant(float(0))
+    for i in range(len(One_hot)):
+        for j in range(len(One_hot[i])):
+            ans = tf.add(ans, tf.log(GetFirstOrderP(encoder_data, i, j)))
+    return tf.negative(ans)
 
 def GetConsistent(lists, decodedM, decodedZ):
     ans = tf.add(tf.constant([0.]), tf.constant([0.]))
@@ -146,7 +186,7 @@ def GetConsistent(lists, decodedM, decodedZ):
         ans = tf.add(ans, tf.log(GetP(i, i, decodedM, decodedZ)))
         for j in range(len(lists[i])):
             if lists[i][j] == 0:
-                ans = tf.subtract(ans, tf.log(1 - GetP(i, i, decodedM, decodedZ)))
+                ans = tf.subtract(ans, tf.log(tf.subtract(1, GetP(i, i, decodedM, decodedZ))))
     return ans 
 
 def OutputFile(data):
@@ -172,7 +212,7 @@ y_true = X
 
 # Define loss and optimizer, minimize the squared error
 loss = tf.reduce_mean(tf.pow(y_true - y_pred, 2))
-#Sloss = tf.add(loss, tf.reduce_mean([[1.0,2.0],[3.0,4.0]]))
+loss = tf.add(loss, GetFirstOrder(encoder_op))
 optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
 # Initialize the variables (i.e. assign their default value)
@@ -195,7 +235,7 @@ with tf.Session() as sess:
         batch_x = np.array(G[index: index + batch_size])
         index += batch_size
         # Run optimization op (backprop) and cost op (to get loss value)
-        _, l = sess.run([optimizer, loss], feed_dict={X: batch_x})
+        _, l = sess.run([optimizer, loss], feed_dict={X: G})
         # Display logs per step
         #if i % display_step == 0 or i == 1:
         print('Step %i: Minibatch Loss: %f' % (i, l))
