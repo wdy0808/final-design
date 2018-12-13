@@ -2,6 +2,7 @@ from __future__ import division, print_function, absolute_import
 
 import tensorflow as tf
 import numpy as np
+import matplotlib.pyplot as plt
 from collections import defaultdict, Iterable
 
 # Import MNIST data
@@ -38,6 +39,20 @@ class Graph(defaultdict):
     def nodes(self):
         return self.keys()
 
+def load_edgelist(file_, undirected=True):
+    G = Graph()
+    with open(file_) as f:
+        for l in f:
+            x, y = l.strip().split()[:2]
+            x = G.node_int_value(x, False)
+            y = G.node_int_value(y, False)
+            if x != -1 & y != -1:
+                G[y].append(x)
+                if undirected:
+                    G[x].append(y)
+    
+    return G
+
 def load_citeseer_content(file):
     G = Graph()
     with open(file) as f:
@@ -61,24 +76,11 @@ def load_citeseer_content(file):
                     }.get(line[i], 0))
     return G
 
-def load_edgelist(file_, undirected=True):
-    G = Graph()
-    with open(file_) as f:
-        for l in f:
-            x, y = l.strip().split()[:2]
-            x = G.node_int_value(x, False)
-            y = G.node_int_value(y, False)
-            if x != -1 & y != -1:
-                G[y].append(x)
-                if undirected:
-                    G[x].append(y)
-    
-    return G
-
 def GetTransitionMatrix(matrix, m):
     m1 = np.array(matrix)
     m2 = np.array(m)
-    return np.dot(m2, m1)
+    t = np.dot(m2, m1)
+    return t
 
 def FromEToM(e, t):
     ans = GetTransitionMatrix(e, e)
@@ -90,11 +92,13 @@ def FromEToM(e, t):
 
 A = load_citeseer_content("./data/citeseer/citeseer.content")
 print("Number of attribute structure nodes: {}".format(len(A.nodes())))
-G = A.ToMatrix(3709)
+G = A.ToMatrix(3709);
 
 Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=False)
-One_hot = Edge_graph.ToMatrix(len(number))
-M = FromEToM(One_hot, 10)
+print("Number of topological structure nodes: {}".format(len(Edge_graph.nodes())))
+One_hot = Edge_graph.ToMatrix(len(number));
+M = FromEToM(One_hot, 1);
+print("Finish Geting High Order Matrix-M");
     
 # Training Parameters
 learning_rate = 0.01
@@ -114,6 +118,7 @@ num_input = 3709 # MNIST data input (img shape: 28*28)
 
 # tf Graph input (only pictures)
 X = tf.placeholder("float", [None, num_input])
+X1 = tf.placeholder("float", [None, len(number)])
 
 weights = {
     'encoder_h1': tf.Variable(tf.random_normal([num_input, n_hidden_1])),
@@ -140,6 +145,31 @@ biases = {
     'decoder_b5': tf.Variable(tf.random_normal([num_input])),
 }
 
+weights1 = {
+    'encoder_h1': tf.Variable(tf.random_normal([len(number), n_hidden_1])),
+    'encoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
+    'encoder_h3': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_3])),
+    'encoder_h4': tf.Variable(tf.random_normal([n_hidden_3, n_hidden_4])),
+    'encoder_h5': tf.Variable(tf.random_normal([n_hidden_4, n_hidden_5])),
+    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_5, n_hidden_4])),
+    'decoder_h2': tf.Variable(tf.random_normal([n_hidden_4, n_hidden_3])),
+    'decoder_h3': tf.Variable(tf.random_normal([n_hidden_3, n_hidden_2])),
+    'decoder_h4': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_1])),
+    'decoder_h5': tf.Variable(tf.random_normal([n_hidden_1, len(number)])),
+}
+biases1 = {
+    'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
+    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
+    'encoder_b3': tf.Variable(tf.random_normal([n_hidden_3])),
+    'encoder_b4': tf.Variable(tf.random_normal([n_hidden_4])),
+    'encoder_b5': tf.Variable(tf.random_normal([n_hidden_5])),
+    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_4])),
+    'decoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
+    'decoder_b3': tf.Variable(tf.random_normal([n_hidden_2])),
+    'decoder_b4': tf.Variable(tf.random_normal([n_hidden_1])),
+    'decoder_b5': tf.Variable(tf.random_normal([len(number)])),
+}
+
 # Building the encoder
 def encoder(x):
     # Encoder Hidden layer with sigmoid activation #1
@@ -163,21 +193,46 @@ def decoder(x):
     layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights['decoder_h5']), biases['decoder_b5']))
     return layer_5
 
+# Building the encoder
+def encoder1(x):
+    # Encoder Hidden layer with sigmoid activation #1
+    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights1['encoder_h1']), biases1['encoder_b1']))
+    # Decoder Hidden layer with sigmoid activation #2
+    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2']))
+    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights1['encoder_h3']), biases1['encoder_b3']))
+    layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights1['encoder_h4']), biases1['encoder_b4']))
+    layer_5 = tf.add(tf.matmul(layer_4, weights1['encoder_h5']), biases1['encoder_b5'])
+    return layer_5
+
+
+# Building the decoder
+def decoder1(x):
+    # Encoder Hidden layer with sigmoid activation #1
+    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights1['decoder_h1']), biases1['decoder_b1']))
+    # Decoder Hidden layer with sigmoid activation #2
+    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights1['decoder_h2']), biases1['decoder_b2']))
+    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights1['decoder_h3']), biases1['decoder_b3']))
+    layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights1['decoder_h4']), biases1['decoder_b4']))
+    layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights1['decoder_h5']), biases1['decoder_b5']))
+    return layer_5
+
 def GetSpecificVector(encoder_data, num):
     t = [[0] * 64] * len(number)
     t[num] = [1] * 64 
+    tf.transpose(encoder_data)
     return tf.reduce_sum(tf.multiply(encoder_data, t), 0)
 
 def GetFirstOrderP(encoder_data, i, j):
     Hi = GetSpecificVector(encoder_data, i)
     Hj = GetSpecificVector(encoder_data, j)
-    return tf.div(float(1), tf.add(float(1), tf.exp(tf.negative(tf.multiply(Hi, tf.transpose(Hj))))))
+    return tf.div(float(1), tf.add(float(1), tf.exp(tf.negative(tf.reduce_sum(tf.multiply(Hi, Hj))))))
 
 def GetFirstOrder(encoder_data):
     ans = tf.constant(float(0))
-    for i in range(len(One_hot)):
-        for j in range(len(One_hot[i])):
-            ans = tf.add(ans, tf.log(GetFirstOrderP(encoder_data, i, j)))
+    for i in range(100):
+        for j in range(100):
+            if One_hot[i][j] == 1:
+                ans = tf.add(ans, tf.log(GetFirstOrderP(encoder_data, i, j)))
     return tf.negative(ans)
 
 def GetConsistent(lists, decodedM, decodedZ):
@@ -186,10 +241,10 @@ def GetConsistent(lists, decodedM, decodedZ):
         ans = tf.add(ans, tf.log(GetP(i, i, decodedM, decodedZ)))
         for j in range(len(lists[i])):
             if lists[i][j] == 0:
-                ans = tf.subtract(ans, tf.log(tf.subtract(1, GetP(i, i, decodedM, decodedZ))))
+                ans = tf.subtract(ans, tf.log(1 - GetP(i, i, decodedM, decodedZ)))
     return ans 
 
-def OutputFile(data):
+def OutputFile(data, data1):
     filename = 'data/citeseer/output.embeddings'
     with open(filename,'w') as f:
         for i in range(len(data)):
@@ -197,6 +252,9 @@ def OutputFile(data):
             f.write(" ")
             for j in range(len(data[i])):
                 f.write(str(data[i][j]))
+                f.write(" ")
+            for j in range(len(data1[i])):
+                f.write(str(data1[i][j]))
                 f.write(" ")
             f.write("\n")
     f.close()
@@ -210,9 +268,20 @@ y_pred = decoder_op
 # Targets (Labels) are the input data.
 y_true = X
 
+# Construct model
+encoder_op1 = encoder1(X1)
+decoder_op1 = decoder1(encoder_op1)
+
+# Prediction
+y_pred1 = decoder_op1
+# Targets (Labels) are the input data.
+y_true1 = X1
+
 # Define loss and optimizer, minimize the squared error
-loss = tf.reduce_mean(tf.pow(y_true - y_pred, 2))
-loss = tf.add(loss, GetFirstOrder(encoder_op))
+loss = tf.add(tf.reduce_mean(tf.pow(y_true - y_pred, 2)), GetFirstOrder(encoder_op))
+loss1 = tf.add(tf.reduce_mean(tf.pow(y_true1 - y_pred1, 2)), GetFirstOrder(encoder_op1))
+loss = tf.add(loss, loss1)
+#Sloss = tf.add(loss, tf.reduce_mean([[1.0,2.0],[3.0,4.0]]))
 optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
 # Initialize the variables (i.e. assign their default value)
@@ -228,19 +297,21 @@ with tf.Session() as sess:
     index = 0
     # Training
     num_steps = int(len(number) / batch_size)
-    for i in range(1, num_steps+1):
+    for i in range(1, 100):
         # Prepare Data
         # Get the next batch of MNIST data (only images are needed, not labels)
         # batch_x, _ = mnist.train.next_batch(batch_size)
-        batch_x = np.array(G[index: index + batch_size])
+        batch_x = np.array(G[0: 3312])
+        batch_x1 = np.array(M[0: 3312])
         index += batch_size
         # Run optimization op (backprop) and cost op (to get loss value)
-        _, l = sess.run([optimizer, loss], feed_dict={X: G})
+        _, l = sess.run([optimizer, loss], feed_dict={X: batch_x, X1: batch_x1})
         # Display logs per step
         #if i % display_step == 0 or i == 1:
         print('Step %i: Minibatch Loss: %f' % (i, l))
     encoder_result = sess.run(encoder_op, feed_dict={X: G})
-    OutputFile(encoder_result.tolist())
+    encoder_result1 = sess.run(encoder_op1, feed_dict={X1: M})
+    OutputFile(encoder_result.tolist(), encoder_result1.tolist())
     # Testing
     # Encode and decode images from test set and visualize their reconstruction.
     '''n = 4
