@@ -92,13 +92,14 @@ def FromEToM(e, t):
 
 A = load_citeseer_content("./data/citeseer/citeseer.content")
 print("Number of attribute structure nodes: {}".format(len(A.nodes())))
-G = A.ToMatrix(3709);
+G = A.ToMatrix(3709)
 
-Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=False)
+Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=True)
 print("Number of topological structure nodes: {}".format(len(Edge_graph.nodes())))
-One_hot = Edge_graph.ToMatrix(len(number));
-M = FromEToM(One_hot, 1);
-print("Finish Geting High Order Matrix-M");
+One_hot = Edge_graph.ToMatrix(len(number))
+#M = FromEToM(One_hot, 1)
+M = One_hot
+print("Finish Geting High Order Matrix-M")
     
 # Training Parameters
 learning_rate = 0.01
@@ -222,27 +223,31 @@ def GetSpecificVector(encoder_data, num):
     tf.transpose(encoder_data)
     return tf.reduce_sum(tf.multiply(encoder_data, t), 0)
 
-def GetFirstOrderP(encoder_data, i, j):
-    Hi = GetSpecificVector(encoder_data, i)
-    Hj = GetSpecificVector(encoder_data, j)
+def GetP(Hi, Hj):
     return tf.div(float(1), tf.add(float(1), tf.exp(tf.negative(tf.reduce_sum(tf.multiply(Hi, Hj))))))
 
-def GetFirstOrder(encoder_data):
-    ans = tf.constant(float(0))
-    for i in range(100):
-        for j in range(100):
-            if One_hot[i][j] == 1:
-                ans = tf.add(ans, tf.log(GetFirstOrderP(encoder_data, i, j)))
-    return tf.negative(ans)
+def GetFirstOrder(Hi, Hj):
+    return tf.log(GetP(Hi, Hj))
 
-def GetConsistent(lists, decodedM, decodedZ):
-    ans = tf.add(tf.constant([0.]), tf.constant([0.]))
-    for i in range(len(lists)):
-        ans = tf.add(ans, tf.log(GetP(i, i, decodedM, decodedZ)))
-        for j in range(len(lists[i])):
-            if lists[i][j] == 0:
-                ans = tf.subtract(ans, tf.log(1 - GetP(i, i, decodedM, decodedZ)))
-    return ans 
+def GetConsistent(Hi, Hj):
+    return tf.log(tf.subtract(float(1), GetP(Hi, Hj))) 
+
+def GetCost(encodedM, encodedZ):
+    ans = tf.constant(float(0))
+    m = []
+    z = []
+    for i in range(len(number)):
+        m.append(GetSpecificVector(encodedM, i))
+        z.append(GetSpecificVector(encodedZ, i))
+    for i in range(len(number)):
+        ans = tf.subtract(ans, tf.log(GetP(m[i], z[i])))
+        for j in range(i + 1, len(number)):
+            if One_hot[i][j] == 1:
+                ans = tf.subtract(ans, GetFirstOrder(m[i], m[j]))
+                ans = tf.subtract(ans, GetFirstOrder(z[i], z[j]))
+            else:
+                ans = tf.add(ans, GetConsistent(m[i], z[j]))
+    return ans
 
 def OutputFile(data, data1):
     filename = 'data/citeseer/output.embeddings'
@@ -278,9 +283,8 @@ y_pred1 = decoder_op1
 y_true1 = X1
 
 # Define loss and optimizer, minimize the squared error
-loss = tf.add(tf.reduce_mean(tf.pow(y_true - y_pred, 2)), GetFirstOrder(encoder_op))
-loss1 = tf.add(tf.reduce_mean(tf.pow(y_true1 - y_pred1, 2)), GetFirstOrder(encoder_op1))
-loss = tf.add(loss, loss1)
+loss = tf.add(tf.reduce_mean(tf.pow(y_true - y_pred, 2)), tf.reduce_mean(tf.pow(y_true1 - y_pred1, 2)))
+loss = tf.add(loss, GetCost(encoder_op1, encoder_op))
 #Sloss = tf.add(loss, tf.reduce_mean([[1.0,2.0],[3.0,4.0]]))
 optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
@@ -297,7 +301,7 @@ with tf.Session() as sess:
     index = 0
     # Training
     num_steps = int(len(number) / batch_size)
-    for i in range(1, 100):
+    for i in range(1, 3):
         # Prepare Data
         # Get the next batch of MNIST data (only images are needed, not labels)
         # batch_x, _ = mnist.train.next_batch(batch_size)
