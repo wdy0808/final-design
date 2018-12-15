@@ -2,12 +2,7 @@ from __future__ import division, print_function, absolute_import
 
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
 from collections import defaultdict, Iterable
-
-# Import MNIST data
-from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
 
 number = [];
 
@@ -90,6 +85,19 @@ def FromEToM(e, t):
         ans = ans + step
     return ans.tolist()
 
+def ReverseMatric(adj):
+    reverse_metric = [[] for i in range(len(adj))]
+    binary_metric = [[] for i in range(len(adj))]
+    for i in range(len(adj)):
+        for j in range(len(adj[i])):
+            if adj[i][j] == 1:
+                reverse_metric[i].append(0.0)
+                binary_metric[i].append(-1.0)
+            else:
+                reverse_metric[i].append(1.0)
+                binary_metric[i].append(1.0)
+    return reverse_metric, binary_metric
+
 A = load_citeseer_content("./data/citeseer/citeseer.content")
 print("Number of attribute structure nodes: {}".format(len(A.nodes())))
 G = A.ToMatrix(3709)
@@ -97,6 +105,7 @@ G = A.ToMatrix(3709)
 Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=True)
 print("Number of topological structure nodes: {}".format(len(Edge_graph.nodes())))
 One_hot = Edge_graph.ToMatrix(len(number))
+One_hot_reverse, One_hot_binary = ReverseMatric(One_hot)
 #M = FromEToM(One_hot, 1)
 M = One_hot
 print("Finish Geting High Order Matrix-M")
@@ -179,7 +188,7 @@ def encoder(x):
     layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['encoder_h2']), biases['encoder_b2']))
     layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights['encoder_h3']), biases['encoder_b3']))
     layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights['encoder_h4']), biases['encoder_b4']))
-    layer_5 = tf.add(tf.matmul(layer_4, weights['encoder_h5']), biases['encoder_b5'])
+    layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights['encoder_h5']), biases['encoder_b5']))
     return layer_5
 
 
@@ -202,7 +211,7 @@ def encoder1(x):
     layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2']))
     layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights1['encoder_h3']), biases1['encoder_b3']))
     layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights1['encoder_h4']), biases1['encoder_b4']))
-    layer_5 = tf.add(tf.matmul(layer_4, weights1['encoder_h5']), biases1['encoder_b5'])
+    layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights1['encoder_h5']), biases1['encoder_b5']))
     return layer_5
 
 
@@ -217,37 +226,31 @@ def decoder1(x):
     layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights1['decoder_h5']), biases1['decoder_b5']))
     return layer_5
 
-def GetSpecificVector(encoder_data, num):
-    t = [[0] * 64] * len(number)
-    t[num] = [1] * 64 
-    tf.transpose(encoder_data)
-    return tf.reduce_sum(tf.multiply(encoder_data, t), 0)
+def GetP(encoded1, encoded2):
+    return tf.div(tf.constant(1.0), tf.add(tf.constant(1.0), tf.exp(tf.negative(tf.matmul(encoded1, tf.transpose(encoded2))))))
 
-def GetP(Hi, Hj):
-    return tf.div(float(1), tf.add(float(1), tf.exp(tf.negative(tf.reduce_sum(tf.multiply(Hi, Hj))))))
+def GetFirstOrder(H):
+    return tf.negative(tf.reduce_sum(tf.log(tf.add(tf.multiply(H, One_hot), One_hot_reverse))))
 
-def GetFirstOrder(Hi, Hj):
-    return tf.log(GetP(Hi, Hj))
-
-def GetConsistent(Hi, Hj):
-    return tf.log(tf.subtract(float(1), GetP(Hi, Hj))) 
+def GetConsistent(H):
+    former = tf.reduce_sum(tf.log(H))
+    later = tf.reduce_sum(tf.log(tf.subtract(tf.constant(1.0), tf.multiply(H, One_hot_reverse))))
+    return later
+    #return tf.subtract(later, former)
 
 def GetCost(encodedM, encodedZ):
-    ans = tf.constant(float(0))
-    m = []
-    z = []
-    for i in range(len(number)):
-        m.append(GetSpecificVector(encodedM, i))
-        z.append(GetSpecificVector(encodedZ, i))
-    for i in range(len(number)):
-        ans = tf.subtract(ans, tf.log(GetP(m[i], z[i])))
-        for j in range(i + 1, len(number)):
-            if One_hot[i][j] == 1:
-                ans = tf.subtract(ans, GetFirstOrder(m[i], m[j]))
-                ans = tf.subtract(ans, GetFirstOrder(z[i], z[j]))
-            else:
-                ans = tf.add(ans, GetConsistent(m[i], z[j]))
-    return ans
+    Pmm = GetP(encodedM, encodedM)
+    Pzz = GetP(encodedZ, encodedZ)
+    Pmz = GetP(encodedM, encodedZ)
+
+    first_order_cost_m = GetFirstOrder(Pmm)
+    first_order_cost_z = GetFirstOrder(Pzz)
+    
+    first_order_cost = tf.add(first_order_cost_m, first_order_cost_z)
+
+    #return first_order_cost
+    return GetConsistent(Pmz)
+    #return tf.add(first_order_cost, GetConsistent(Pmz))
 
 def OutputFile(data, data1):
     filename = 'data/citeseer/output.embeddings'
@@ -301,6 +304,7 @@ with tf.Session() as sess:
     index = 0
     # Training
     num_steps = int(len(number) / batch_size)
+
     for i in range(1, 3):
         # Prepare Data
         # Get the next batch of MNIST data (only images are needed, not labels)
