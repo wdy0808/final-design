@@ -1,397 +1,145 @@
-# -*- coding: utf-8 -*
+from __future__ import division, print_function, absolute_import
+
 import tensorflow as tf
 import numpy as np
-import logging
-import sys
-import math
-from io import open
-from os import path
-from time import time
-from glob import glob
-from six.moves import range, zip, zip_longest
-from six import iterkeys
 from collections import defaultdict, Iterable
-from multiprocessing import cpu_count
-import random
-from random import shuffle
-from itertools import product,permutations
-from scipy.io import loadmat
-from scipy.sparse import issparse
 
-from concurrent.futures import ProcessPoolExecutor
-
-from multiprocessing import Pool
-from multiprocessing import cpu_count
-
-logger = logging.getLogger("deepwalk") #获取日志实例
-
-
-__author__ = "Bryan Perozzi"
-__email__ = "bperozzi@cs.stonybrook.edu"
-
-LOGFORMAT = "%(asctime).19s %(levelname)s %(filename)s: %(lineno)s %(message)s"
 number = [];
 
 class Graph(defaultdict): 
-  """defaultydict 可以设置初始值 减少访问不存在key时错误发生"""
-  """Efficient basic implementation of nx `Graph' â€“ Undirected graphs with self loops"""  
-  def __init__(self):
-    super(Graph, self).__init__(list) #构建的图是一个字典，key是节点，key对应的value是list
+    def __init__(self):
+        super(Graph, self).__init__(list) #构建的图是一个字典，key是节点，key对应的value是list
 
-  def node_int_value(self, node, flag):
-    global number
-    try:
-      int_value = number.index(node)
-    except ValueError:
-      if flag == True:
-        int_value = len(number)
-        number.append(node)
-      else:
-        int_value = -1
-    return int_value
+    def node_int_value(self, node, flag):
+        global number
+        try:
+            int_value = number.index(node)
+        except ValueError:
+            if flag == True:
+                int_value = len(number)
+                number.append(node)
+            else:
+                int_value = -1
+        return int_value
 
-  def nodes(self):
-    return self.keys()
+    def ToMatrix(self, dimen):
+        lists = [[] for i in range(len(number))]
+        for i in range(len(number)):
+            data = [0.0] * dimen
+            for j in self[i]:
+                data[j] = 1.0
+            lists[i]=data
+        return lists
 
-  def adjacency_iter(self):
-    return self.iteritems() #返回本身字典列表操作后的迭代
-
-  def subgraph(self, nodes={}):
-    subgraph = Graph()
-    
-    for n in nodes:
-      if n in self:
-        subgraph[n] = [x for x in self[n] if x in nodes] #nodes表示收缩节点范围
-        
-    return subgraph
-
-  def make_undirected(self):
-  
-    t0 = time()
-
-    for v in self.keys():
-      for other in self[v]:
-        if v != other:
-          self[other].append(v)
-    
-    t1 = time()
-    logger.info('make_directed: added missing edges {}s'.format(t1-t0))
-
-    self.make_consistent() #排序、去重、除掉自循环
-    return self
-
-  def make_consistent(self):
-    t0 = time()
-    for k in iterkeys(self):
-      self[k] = list(sorted(set(self[k])))
-    
-    t1 = time()
-    logger.info('make_consistent: made consistent in {}s'.format(t1-t0))
-
-    self.remove_self_loops()
-
-    return self
-
-  def remove_self_loops(self):
-
-    removed = 0
-    t0 = time()
-
-    for x in self:
-      if x in self[x]: 
-        self[x].remove(x)
-        removed += 1
-    
-    t1 = time()
-
-    logger.info('remove_self_loops: removed {} loops in {}s'.format(removed, (t1-t0)))
-    return self
-
-  def check_self_loops(self):
-    for x in self:
-      for y in self[x]:
-        if x == y:
-          return True
-    
-    return False
-
-  def has_edge(self, v1, v2):
-    if v2 in self[v1] or v1 in self[v2]:
-      return True
-    return False
-
-  def degree(self, nodes=None):
-    if isinstance(nodes, Iterable):
-      return {v:len(self[v]) for v in nodes}
-    else:
-      return len(self[nodes])
-
-  def number_of_edges(self):
-    "Returns the number of nodes in the graph"
-    return sum([self.degree(x) for x in self.keys()])/2
-
-  def number_of_nodes(self):
-    "Returns the number of nodes in the graph"
-    return len(self)
-
-  def random_walk(self, path_length, alpha=0, rand=random.Random(), start=None):
-    """ Returns a truncated random walk.
-
-        path_length: Length of the random walk.
-        alpha: probability of restarts.
-        start: the start node of the random walk.
-        这里的随机游走路径未必是连续的，有可能是走着走着突然回到起点接着走
-    """
-    G = self
-    if start:
-      path = [start]
-    else:
-      # Sampling is uniform w.r.t V, and not w.r.t E
-      path = [rand.choice(G.keys())]
-
-    while len(path) < path_length:
-      cur = path[-1]
-      if len(G[cur]) > 0:
-        if rand.random() >= alpha:
-          path.append(rand.choice(G[cur]))
-        else:
-          path.append(path[0]) #有概率从头开始
-      else:
-        break
-    return [str(node) for node in path]
-  
-  def ToMatrix(self, dimen):
-    lists = [[] for i in range(len(number))]
-    for i in range(len(number)):
-      data = [0] * dimen
-      for j in self[i]:
-        data[j] = 1
-      lists[i]=data
-    return lists
-    
-
-# TODO add build_walks in here
-
-def build_deepwalk_corpus(G, num_paths, path_length, alpha=0,
-                      rand=random.Random(0)):
-  """
-    这个函数可以对一个图生成一个语料库
-    :param num_paths: 路径数量
-    """
-
-  walks = []
-
-  nodes = list(G.nodes())
-  
-  for cnt in range(num_paths):
-    rand.shuffle(nodes)
-    for node in nodes:
-      walks.append(G.random_walk(path_length, rand=rand, alpha=alpha, start=node))
-  
-  return walks
-
-def build_deepwalk_corpus_iter(G, num_paths, path_length, alpha=0,
-                      rand=random.Random(0)):
-  walks = []
-
-  nodes = list(G.nodes())
-
-  for cnt in range(num_paths):
-    rand.shuffle(nodes)
-    for node in nodes:
-      yield G.random_walk(path_length, rand=rand, alpha=alpha, start=node)
-
-
-def clique(size):
-    return from_adjlist(permutations(range(1,size+1))) ###############3#############
-
-
-# http://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks-in-python
-def grouper(n, iterable, padvalue=None):
-    "grouper(3, 'abcdefg', 'x') --> ('a','b','c'), ('d','e','f'), ('g','x','x')"
-    return zip_longest(*[iter(iterable)]*n, fillvalue=padvalue)
-
-def parse_adjacencylist(f):
-  adjlist = []
-  for l in f:
-    if l and l[0] != "#":
-      introw = [int(x) for x in l.strip().split()]
-      row = [introw[0]]
-      row.extend(set(sorted(introw[1:])))
-      adjlist.extend([row])
-  
-  return adjlist
-
-def parse_adjacencylist_unchecked(f):
-  adjlist = []
-  for l in f:
-    if l and l[0] != "#":
-      adjlist.extend([[int(x) for x in l.strip().split()]])
-  
-  return adjlist
-
-def load_adjacencylist(file_, undirected=False, chunksize=10000, unchecked=True):
-
-  if unchecked:
-    parse_func = parse_adjacencylist_unchecked
-    convert_func = from_adjlist_unchecked
-  else:
-    parse_func = parse_adjacencylist
-    convert_func = from_adjlist
-
-  adjlist = []
-
-  t0 = time()
-
-  with open(file_) as f:
-    with ProcessPoolExecutor(max_workers=cpu_count()) as executor:
-      total = 0 
-      for idx, adj_chunk in enumerate(executor.map(parse_func, grouper(int(chunksize), f))):
-          adjlist.extend(adj_chunk)
-          total += len(adj_chunk)
-  
-  t1 = time()
-
-  logger.info('Parsed {} edges with {} chunks in {}s'.format(total, idx, t1-t0))
-
-  t0 = time()
-  G = convert_func(adjlist)
-  t1 = time()
-
-  logger.info('Converted edges to graph in {}s'.format(t1-t0))
-
-  if undirected:
-    t0 = time()
-    G = G.make_undirected()
-    t1 = time()
-    logger.info('Made graph undirected in {}s'.format(t1-t0))
-
-  return G 
-
+    def nodes(self):
+        return self.keys()
 
 def load_edgelist(file_, undirected=True):
-  G = Graph()
-  with open(file_) as f:
-    for l in f:
-      x, y = l.strip().split()[:2]
-      x = G.node_int_value(x, False)
-      y = G.node_int_value(y, False)
-      if x != -1 & y != -1:
-        G[y].append(x)
-        if undirected:
-            G[x].append(y)
-  
-  #G.make_consistent()
-  return G
+    G = Graph()
+    with open(file_) as f:
+        for l in f:
+            x, y = l.strip().split()[:2]
+            x = G.node_int_value(x, False)
+            y = G.node_int_value(y, False)
+            if x != -1 & y != -1:
+                G[y].append(x)
+                if undirected:
+                    G[x].append(y)
+    
+    return G
 
 def load_citeseer_content(file):
-  G = Graph()
-  with open(file) as f:
-    for l in f:
-      line = l.strip().split()
-      paper_id = G.node_int_value(line[0], True)
-      line = line[1:]
-      for i in range(len(line)):
-        if line[i] == '1':
-          G[paper_id].append(i)
-        elif line[i] == '0':
-          continue
-        else:
-          G[paper_id].append(i + {
-            'Agents': 0,
-            'AI': 1,
-            'DB': 2,
-            'IR': 3,
-            'ML': 4,
-            'HCI': 5
-          }.get(line[i], 0))
-  return G
-
-def load_matfile(file_, variable_name="network", undirected=True):
-  mat_varables = loadmat(file_)
-  mat_matrix = mat_varables[variable_name]
-
-  return from_numpy(mat_matrix, undirected)
-
-
-def from_networkx(G_input, undirected=True):
     G = Graph()
-
-    for idx, x in enumerate(G_input.nodes_iter()):
-        for y in iterkeys(G_input[x]):
-            G[x].append(y)
-
-    if undirected:
-        G.make_undirected()
-
+    with open(file) as f:
+        for l in f:
+            line = l.strip().split()
+            paper_id = G.node_int_value(line[0], True)
+            line = line[1:]
+            for i in range(len(line)):
+                if line[i] == '1':
+                    G[paper_id].append(i)
+                elif line[i] == '0':
+                    continue
+                else:
+                    G[paper_id].append(i + {
+                        'Agents': 0,
+                        'AI': 1,
+                        'DB': 2,
+                        'IR': 3,
+                        'ML': 4,
+                        'HCI': 5
+                    }.get(line[i], 0))
     return G
 
+def GetTransitionMatrix(matrix, m):
+    m1 = np.array(matrix)
+    m2 = np.array(m)
+    t = np.dot(m2, m1)
+    return t
 
-def from_numpy(x, undirected=True):
-    G = Graph()
+def FromEToM(e, t):
+    ans = GetTransitionMatrix(e, e)
+    step = ans
+    for i in range(1, t):
+        step = GetTransitionMatrix(e, step.tolist())
+        ans = ans + step
+    return ans.tolist()
 
-    if issparse(x):
-        cx = x.tocoo()
-        for i,j,v in zip(cx.row, cx.col, cx.data):
-            G[i].append(j)
-    else:
-      raise Exception("Dense matrices not yet supported.")
+def ReverseMatric(adj):
+    reverse_metric = [[] for i in range(len(adj))]
+    binary_metric = [[] for i in range(len(adj))]
+    for i in range(len(adj)):
+        for j in range(len(adj[i])):
+            if adj[i][j] == 1:
+                reverse_metric[i].append(0.0)
+                binary_metric[i].append(-1.0)
+            else:
+                reverse_metric[i].append(1.0)
+                binary_metric[i].append(1.0)
+    return reverse_metric, binary_metric
 
-    if undirected:
-        G.make_undirected()
+A = load_citeseer_content("./data/citeseer/citeseer.content")
+print("Number of attribute structure nodes: {}".format(len(A.nodes())))
+G = A.ToMatrix(3709)
 
-    G.make_consistent()
-    return G
-
-
-def from_adjlist(adjlist):
-    G = Graph()
+Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=True)
+print("Number of topological structure nodes: {}".format(len(Edge_graph.nodes())))
+One_hot = Edge_graph.ToMatrix(len(number))
+One_hot_reverse, One_hot_binary = ReverseMatric(One_hot)
+M = FromEToM(One_hot, 5)
+print("Finish Geting High Order Matrix-M")
     
-    for row in adjlist:
-        node = row[0]
-        neighbors = row[1:]
-        G[node] = list(sorted(set(neighbors)))
-
-    return G
-
-
-def from_adjlist_unchecked(adjlist):
-    G = Graph()
-    
-    for row in adjlist:
-        node = row[0]
-        neighbors = row[1:]
-        G[node] = neighbors
-
-    return G
-
+# Training Parameters
 learning_rate = 0.01
-training_epochs = 5
+num_steps = 30000
 batch_size = 256
-display_step = 1
+
+display_step = 1000
 examples_to_show = 10
 
-n_input_citeseer_cities = 2321
-n_input_citeseer_content = 3709
-X = tf.placeholder("float")
-X_content = tf.placeholder("float")
-
+# Network Parameters
 n_hidden_1 = 1024 # 1st layer num features
 n_hidden_2 = 512 # 2nd layer num features
 n_hidden_3 = 256 # 1st layer num features
 n_hidden_4 = 128 # 2nd layer num features
 n_hidden_5 = 64 # 3nd layer num features
+num_input = 3709 # MNIST data input (img shape: 28*28)
+
+# tf Graph input (only pictures)
+X = tf.placeholder("float", [None, num_input])
+X1 = tf.placeholder("float", [None, len(number)])
+
 weights = {
-    'encoder_h1': tf.Variable(tf.random_normal([n_input_citeseer_cities, n_hidden_1])),
-    'encoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
-    'encoder_h3': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_3])),
-    'encoder_h4': tf.Variable(tf.random_normal([n_hidden_3, n_hidden_4])),
-    'encoder_h5': tf.Variable(tf.random_normal([n_hidden_4, n_hidden_5])),
-    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_5, n_hidden_4])),
-    'decoder_h2': tf.Variable(tf.random_normal([n_hidden_4, n_hidden_3])),
-    'decoder_h3': tf.Variable(tf.random_normal([n_hidden_3, n_hidden_2])),
-    'decoder_h4': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_1])),
-    'decoder_h5': tf.Variable(tf.random_normal([n_hidden_1, n_input_citeseer_cities])),
+    'encoder_h1': tf.Variable(tf.truncated_normal([num_input, n_hidden_1])),
+    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, n_hidden_2])),
+    'encoder_h3': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_3])),
+    'encoder_h4': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_4])),
+    'encoder_h5': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_5])),
+    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_5, n_hidden_4])),
+    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_3])),
+    'decoder_h3': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_2])),
+    'decoder_h4': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_1])),
+    'decoder_h5': tf.Variable(tf.truncated_normal([n_hidden_1, num_input])),
 }
 biases = {
     'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
@@ -403,22 +151,22 @@ biases = {
     'decoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
     'decoder_b3': tf.Variable(tf.random_normal([n_hidden_2])),
     'decoder_b4': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b5': tf.Variable(tf.random_normal([n_input_citeseer_cities])),
+    'decoder_b5': tf.Variable(tf.random_normal([num_input])),
 }
 
-weights_content = {
-    'encoder_h1': tf.Variable(tf.random_normal([n_input_citeseer_content, n_hidden_1])),
-    'encoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
-    'encoder_h3': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_3])),
-    'encoder_h4': tf.Variable(tf.random_normal([n_hidden_3, n_hidden_4])),
-    'encoder_h5': tf.Variable(tf.random_normal([n_hidden_4, n_hidden_5])),
-    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_5, n_hidden_4])),
-    'decoder_h2': tf.Variable(tf.random_normal([n_hidden_4, n_hidden_3])),
-    'decoder_h3': tf.Variable(tf.random_normal([n_hidden_3, n_hidden_2])),
-    'decoder_h4': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_1])),
-    'decoder_h5': tf.Variable(tf.random_normal([n_hidden_1, n_input_citeseer_content])),
+weights1 = {
+    'encoder_h1': tf.Variable(tf.truncated_normal([len(number), n_hidden_1])),
+    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, n_hidden_2])),
+    'encoder_h3': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_3])),
+    'encoder_h4': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_4])),
+    'encoder_h5': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_5])),
+    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_5, n_hidden_4])),
+    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_3])),
+    'decoder_h3': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_2])),
+    'decoder_h4': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_1])),
+    'decoder_h5': tf.Variable(tf.truncated_normal([n_hidden_1, len(number)])),
 }
-biases_content = {
+biases1 = {
     'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
     'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
     'encoder_b3': tf.Variable(tf.random_normal([n_hidden_3])),
@@ -428,193 +176,176 @@ biases_content = {
     'decoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
     'decoder_b3': tf.Variable(tf.random_normal([n_hidden_2])),
     'decoder_b4': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b5': tf.Variable(tf.random_normal([n_input_citeseer_content])),
+    'decoder_b5': tf.Variable(tf.random_normal([len(number)])),
 }
 
 # Building the encoder
 def encoder(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['encoder_h1']),
-                                   biases['encoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['encoder_h2']),
-                                   biases['encoder_b2']))
-                                   # Decoder Hidden layer with sigmoid activation #2
-    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights['encoder_h3']),
-                                  biases['encoder_b3']))
-    layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights['encoder_h4']),
-                                  biases['encoder_b4']))
-    layer_5 = tf.add(tf.matmul(layer_4, weights['encoder_h5']),
-                                   biases['encoder_b5'])
+    # Encoder Hidden layer with tanh activation #1
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights['encoder_h1']), biases['encoder_b1']))
+    # Decoder Hidden layer with tanh activation #2
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['encoder_h2']), biases['encoder_b2']))
+    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights['encoder_h3']), biases['encoder_b3']))
+    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights['encoder_h4']), biases['encoder_b4']))
+    layer_5 = tf.add(tf.matmul(layer_4, weights['encoder_h5']), biases['encoder_b5'])
     return layer_5
-
 
 # Building the decoder
 def decoder(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder_h1']),
-                                   biases['decoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['decoder_h2']),
-                                   biases['decoder_b2']))
-    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights['decoder_h3']),
-                                   biases['decoder_b3']))
-    layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights['decoder_h4']),
-                                   biases['decoder_b4']))
-    layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights['decoder_h5']),
-                                   biases['decoder_b5']))
+    # Encoder Hidden layer with tanh activation #1
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights['decoder_h1']), biases['decoder_b1']))
+    # Decoder Hidden layer with tanh activation #2
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['decoder_h2']), biases['decoder_b2']))
+    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights['decoder_h3']), biases['decoder_b3']))
+    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights['decoder_h4']), biases['decoder_b4']))
+    layer_5 = tf.nn.tanh(tf.add(tf.matmul(layer_4, weights['decoder_h5']), biases['decoder_b5']))
     return layer_5
 
 # Building the encoder
-def encoder_content(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights_content['encoder_h1']),
-                                   biases_content['encoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights_content['encoder_h2']),
-                                   biases_content['encoder_b2']))
-                                   # Decoder Hidden layer with sigmoid activation #2
-    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights_content['encoder_h3']),
-                                  biases_content['encoder_b3']))
-    layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights_content['encoder_h4']),
-                                  biases_content['encoder_b4']))
-    layer_5 = tf.add(tf.matmul(layer_4, weights_content['encoder_h5']),
-                                   biases_content['encoder_b5'])
+def encoder1(x):
+    # Encoder Hidden layer with tanh activation #1
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights1['encoder_h1']), biases1['encoder_b1']))
+    # Decoder Hidden layer with tanh activation #2
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2']))
+    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights1['encoder_h3']), biases1['encoder_b3']))
+    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights1['encoder_h4']), biases1['encoder_b4']))
+    layer_5 = tf.add(tf.matmul(layer_4, weights1['encoder_h5']), biases1['encoder_b5'])
     return layer_5
-
 
 # Building the decoder
-def decoder_content(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights_content['decoder_h1']),
-                                   biases_content['decoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights_content['decoder_h2']),
-                                   biases_content['decoder_b2']))
-    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights_content['decoder_h3']),
-                                   biases_content['decoder_b3']))
-    layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights_content['decoder_h4']),
-                                   biases_content['decoder_b4']))
-    layer_5 = tf.nn.sigmoid(tf.add(tf.matmul(layer_4, weights_content['decoder_h5']),
-                                   biases_content['decoder_b5']))
+def decoder1(x):
+    # Encoder Hidden layer with tanh activation #1
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights1['decoder_h1']), biases1['decoder_b1']))
+    # Decoder Hidden layer with tanh activation #2
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights1['decoder_h2']), biases1['decoder_b2']))
+    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights1['decoder_h3']), biases1['decoder_b3']))
+    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights1['decoder_h4']), biases1['decoder_b4']))
+    layer_5 = tf.nn.tanh(tf.add(tf.matmul(layer_4, weights1['decoder_h5']), biases1['decoder_b5']))
     return layer_5
 
-def GetP(i, j, decodedM, decodedZ):
-  sum_value = 0
-  for k in range(len(decodedZ[i])):
-      sum_value += decodedM[i][k] * decodedZ[j][k]
-  p = 1 / (1 + math.exp(-1 * sum_value))
+def GetP(encoded1, encoded2):
+    return tf.div(tf.constant(1.0), tf.add(tf.constant(1.0), tf.exp(tf.negative(tf.matmul(encoded1, tf.transpose(encoded2))))))
 
-def GetFirstOrderP(lists, decoded):
-    ans = tf.add(tf.constant([0.]), tf.constant([0.]))
-    for i in range(len(lists)):
-        for j in range(len(lists[i])):
-            if lists[i][j] == 1:
-                ans = tf.add(ans, tf.log(GetP(i, j, decoded, decoded)))
-    return ans 
+def GetFirstOrder(H):
+    return tf.negative(tf.reduce_sum(tf.log(tf.add(tf.multiply(H, One_hot), One_hot_reverse))))
 
-def GetConsistent(lists, decodedM, decodedZ):
-  ans = tf.add(tf.constant([0.]), tf.constant([0.]))
-  for i in range(len(lists)):
-    ans = tf.add(ans, tf.log(GetP(i, i, decodedM, decodedZ)))
-    for j in range(len(lists[i])):
-      if lists[i][j] == 0:
-        ans = tf.subtract(ans, tf.log(1 - GetP(i, i, decodedM, decodedZ)))
-  return ans 
+def GetConsistent(H):
+    later = tf.negative(tf.reduce_sum(tf.log(tf.add(tf.multiply(tf.subtract(tf.constant(1.0), H), One_hot_reverse), One_hot))))
+    return tf.add(GetFirstOrder(H), later)
+    '''former = tf.reduce_sum(tf.log(H))
+    later = tf.reduce_sum(tf.log(tf.subtract(tf.constant(1.0), tf.multiply(H, One_hot_reverse))))
+    #return tf.negative(former)
+    return tf.subtract(later, former)'''
 
-def AutoEncoder(input_data, intput_init_data, input_data_attribute):
-    global number
+def GetCost(encodedM, encodedZ):
+    Pmm = GetP(encodedM, encodedM)
+    Pzz = GetP(encodedZ, encodedZ)
+    Pmz = GetP(encodedM, encodedZ)
 
-    encoder_op = encoder(X)
-    decoder_op = decoder(encoder_op)
+    first_order_cost_m = GetFirstOrder(Pmm)
+    first_order_cost_z = GetFirstOrder(Pzz)
+    
+    first_order_cost = tf.add(first_order_cost_m, first_order_cost_z)
 
-    encoder_op_attribute = encoder_content(X_content)
-    decoder_op_attribute = decoder_content(encoder_op_attribute)
+    #return first_order_cost
+    #return GetConsistent(Pmz)
+    return tf.add(first_order_cost, GetConsistent(Pmz))
 
-    # Prediction
-    y_pred = decoder_op
-    # Targets (Labels) are the input data.
-    y_true = X
+def OutputFile(data, data1):
+    filename = 'data/citeseer/output.embeddings'
+    with open(filename,'w') as f:
+        for i in range(len(data)):
+            f.write(number[i])
+            f.write(" ")
+            for j in range(len(data[i])):
+                f.write(str(data[i][j]))
+                f.write(" ")
+            for j in range(len(data1[i])):
+                f.write(str(data1[i][j]))
+                f.write(" ")
+            f.write("\n")
+    f.close()
 
-    # Prediction
-    y_pred_attribute = decoder_op_attribute
-    # Targets (Labels) are the input data.
-    y_true_attribute = X_content
+# Construct model
+encoder_op = encoder(X)
+decoder_op = decoder(encoder_op)
 
-    ans = [[] for i in range(len(number))]
+# Prediction
+y_pred = decoder_op
+# Targets (Labels) are the input data.
+y_true = X
 
-    with tf.Session() as sess:
-      if int((tf.__version__).split('.')[1]) < 12 and int((tf.__version__).split('.')[0]) < 1:
-        init = tf.initialize_all_variables()
-      else:
-          init = tf.global_variables_initializer()
-      sess.run(init)
+# Construct model
+encoder_op1 = encoder1(X1)
+decoder_op1 = decoder1(encoder_op1)
 
-      #first = tf.add(GetFirstOrderP(intput_init_data, encoder_op.eval().tolist()), GetFirstOrderP(intput_init_data, encoder_op_attribute.eval().tolist()))
-      cost = tf.add(tf.reduce_mean(tf.pow(y_true - y_pred, 2)), tf.reduce_mean(tf.pow(y_true_attribute - y_pred_attribute, 2)))
-      #ans = tf.subtract(second, first)
-      #cost = tf.subtract(ans, GetConsistent(intput_init_data, encoder_op.eval().tolist(), encoder_op_attribute.eval().tolist()))
-      optimizer = tf.train.AdamOptimizer(learning_rate).minimize(cost)
+# Prediction
+y_pred1 = decoder_op1
+# Targets (Labels) are the input data.
+y_true1 = X1
 
-      total_batch = int(len(number)/batch_size)
-    # Training cycle
-      for epoch in range(training_epochs):
-          # Loop over all batches
-          for i in range(total_batch):
-              batch_xs = input_data[batch_size * i : batch_size * i + batch_size]
-              batch_xs_content = input_data_attribute[batch_size * i : batch_size * i + batch_size]
-              # Run optimization op (backprop) and cost op (to get loss value)
-              _, c = sess.run([optimizer, cost], feed_dict={X: batch_xs, X_content: batch_xs_content})
-          # Display logs per epoch step
-      encoder_result = sess.run(encoder_op, feed_dict={X: input_data})
-      encoder_result1 = sess.run(encoder_op, encoder_op_attribute={X_content: batch_xs_content})
-      for i in range(len(number)):
-        ans[i].append(encoder_result[i])
-        ans[i].append(encoder_result1[i])
-      
-    return ans
+# Define loss and optimizer, minimize the squared error
+loss = tf.add(tf.reduce_mean(tf.pow(y_true - y_pred, 2)), tf.reduce_mean(tf.pow(y_true1 - y_pred1, 2)))
+loss = tf.add(loss, GetCost(tf.nn.softmax(encoder_op1), tf.nn.softmax(encoder_op)))
+optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
-def GetTransitionMatrix(matrix, m):
-  m1 = np.array(matrix)
-  m2 = np.array(m)
-  return np.dot(m2, m1)
+# Initialize the variables (i.e. assign their default value)
+init = tf.global_variables_initializer()
 
-def FromEToM(e, t):
-  ans = GetTransitionMatrix(e, e)
-  step = ans
-  for i in range(1, t):
-    step = GetTransitionMatrix(e, step.tolist())
-    ans = ans + step
-  return ans.tolist()
+# Start Training
+# Start a new TF session
+with tf.Session() as sess:
 
-def OuFile(data):
-  filename = '/data/citeseer/output.embeddings'
-  with open(filename,'w') as f:
-    for i in range(len(data)):
-      f.write(number[i])
-      f.write(" ")
-      f.write(data[i])
-      f.write("\n")
-  f.close()
+    # Run the initializer
+    sess.run(init)
 
+    index = 0
+    # Training
+    num_steps = int(len(number) / batch_size)
 
-def process(inputfile, inputattributefile, outputfile):
-    A = load_citeseer_content(inputattributefile)
-    print("Number of attribute structure nodes: {}".format(len(A.nodes())))
+    for i in range(1, 3):
+        # Prepare Data
+        # Get the next batch of MNIST data (only images are needed, not labels)
+        # batch_x, _ = mnist.train.next_batch(batch_size)
+        batch_x = np.array(G[0: 3312])
+        batch_x1 = np.array(M[0: 3312])
+        index += batch_size
+        # Run optimization op (backprop) and cost op (to get loss value)
+        _, l = sess.run([optimizer, loss], feed_dict={X: batch_x, X1: batch_x1})
+        # Display logs per step
+        #if i % display_step == 0 or i == 1:
+        print('Step %i: Minibatch Loss: %f' % (i, l))
+    encoder_result = sess.run(encoder_op, feed_dict={X: G})
+    encoder_result1 = sess.run(encoder_op1, feed_dict={X1: M})
+    OutputFile(encoder_result.tolist(), encoder_result1.tolist())
+    # Testing
+    # Encode and decode images from test set and visualize their reconstruction.
+    '''n = 4
+    canvas_orig = np.empty((28 * n, 28 * n))
+    canvas_recon = np.empty((28 * n, 28 * n))
+    for i in range(n):
+        # MNIST test set
+        batch_x, _ = mnist.test.next_batch(n)
+        # Encode and decode the digit image
+        g = sess.run(decoder_op, feed_dict={X: batch_x})
 
-    G = load_edgelist(inputfile, undirected=False)
-    print("Number of topological structure nodes: {}".format(len(G.nodes())))
+        # Display original images
+        for j in range(n):
+            # Draw the original digits
+            canvas_orig[i * 28:(i + 1) * 28, j * 28:(j + 1) * 28] = \
+                batch_x[j].reshape([28, 28])
+        # Display reconstructed images
+        for j in range(n):
+            # Draw the reconstructed digits
+            canvas_recon[i * 28:(i + 1) * 28, j * 28:(j + 1) * 28] = \
+                g[j].reshape([28, 28])
 
-    e = G.ToMatrix(len(number))
-    answer = AutoEncoder(FromEToM(e, 10), e, A.ToMatrix(n_input_citeseer_content))
-    OuFile(answer.tolist())
+    print("Original Images")
+    plt.figure(figsize=(n, n))
+    plt.imshow(canvas_orig, origin="upper", cmap="gray")
+    plt.show()
 
-def main():
-    inputfile = "./data/citeseer/citeseer.cites"
-    inputattributefile = "./data/citeseer/citeseer.content"
-    outputfile = "./data/citeseer/output.embeddings"
-
-    process(inputfile, inputattributefile, outputfile)
-
-if __name__ == "__main__":
-  sys.exit(main())
+    print("Reconstructed Images")
+    plt.figure(figsize=(n, n))
+    plt.imshow(canvas_recon, origin="upper", cmap="gray")
+    plt.show()'''
