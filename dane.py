@@ -60,15 +60,6 @@ def load_citeseer_content(file):
                     G[paper_id].append(i)
                 elif line[i] == '0':
                     continue
-                else:
-                    G[paper_id].append(i + {
-                        'Agents': 0,
-                        'AI': 1,
-                        'DB': 2,
-                        'IR': 3,
-                        'ML': 4,
-                        'HCI': 5
-                    }.get(line[i], 0))
     return G
 
 def GetTransitionMatrix(matrix, m):
@@ -100,7 +91,7 @@ def ReverseMatric(adj):
 
 A = load_citeseer_content("./data/citeseer/citeseer.content")
 print("Number of attribute structure nodes: {}".format(len(A.nodes())))
-G = A.ToMatrix(3709)
+G = A.ToMatrix(3703)
 
 Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=True)
 print("Number of topological structure nodes: {}".format(len(Edge_graph.nodes())))
@@ -118,12 +109,10 @@ display_step = 1000
 examples_to_show = 10
 
 # Network Parameters
-n_hidden_1 = 1024 # 1st layer num features
-n_hidden_2 = 512 # 2nd layer num features
-n_hidden_3 = 256 # 1st layer num features
-n_hidden_4 = 128 # 2nd layer num features
-n_hidden_5 = 64 # 3nd layer num features
-num_input = 3709 # MNIST data input (img shape: 28*28)
+n_hidden_1 = 500 # 1st layer num features
+n_hidden_2 = 200 # 1st layer num features
+n_hidden_3 = 100 # 2nd layer num features
+num_input = 3703 # MNIST data input (img shape: 28*28)
 
 # tf Graph input (only pictures)
 X = tf.placeholder("float", [None, num_input])
@@ -131,52 +120,28 @@ X1 = tf.placeholder("float", [None, len(number)])
 
 weights = {
     'encoder_h1': tf.Variable(tf.truncated_normal([num_input, n_hidden_1])),
-    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, n_hidden_2])),
-    'encoder_h3': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_3])),
-    'encoder_h4': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_4])),
-    'encoder_h5': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_5])),
-    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_5, n_hidden_4])),
-    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_3])),
-    'decoder_h3': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_2])),
-    'decoder_h4': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_1])),
-    'decoder_h5': tf.Variable(tf.truncated_normal([n_hidden_1, num_input])),
+    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, n_hidden_3])),
+    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_1])),
+    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, num_input])),
 }
 biases = {
     'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
-    'encoder_b3': tf.Variable(tf.random_normal([n_hidden_3])),
-    'encoder_b4': tf.Variable(tf.random_normal([n_hidden_4])),
-    'encoder_b5': tf.Variable(tf.random_normal([n_hidden_5])),
-    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_4])),
-    'decoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
-    'decoder_b3': tf.Variable(tf.random_normal([n_hidden_2])),
-    'decoder_b4': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b5': tf.Variable(tf.random_normal([num_input])),
+    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
+    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
+    'decoder_b2': tf.Variable(tf.random_normal([num_input])),
 }
 
 weights1 = {
-    'encoder_h1': tf.Variable(tf.truncated_normal([len(number), n_hidden_1])),
-    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, n_hidden_2])),
-    'encoder_h3': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_3])),
-    'encoder_h4': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_4])),
-    'encoder_h5': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_5])),
-    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_5, n_hidden_4])),
-    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_3])),
-    'decoder_h3': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_2])),
-    'decoder_h4': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_1])),
-    'decoder_h5': tf.Variable(tf.truncated_normal([n_hidden_1, len(number)])),
+    'encoder_h1': tf.Variable(tf.truncated_normal([len(number), n_hidden_2])),
+    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_3])),
+    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_2])),
+    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_2, len(number)])),
 }
 biases1 = {
-    'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
-    'encoder_b3': tf.Variable(tf.random_normal([n_hidden_3])),
-    'encoder_b4': tf.Variable(tf.random_normal([n_hidden_4])),
-    'encoder_b5': tf.Variable(tf.random_normal([n_hidden_5])),
-    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_4])),
-    'decoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
-    'decoder_b3': tf.Variable(tf.random_normal([n_hidden_2])),
-    'decoder_b4': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b5': tf.Variable(tf.random_normal([len(number)])),
+    'encoder_b1': tf.Variable(tf.random_normal([n_hidden_2])),
+    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
+    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_2])),
+    'decoder_b2': tf.Variable(tf.random_normal([len(number)])),
 }
 
 # Building the encoder
@@ -184,11 +149,8 @@ def encoder(x):
     # Encoder Hidden layer with tanh activation #1
     layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights['encoder_h1']), biases['encoder_b1']))
     # Decoder Hidden layer with tanh activation #2
-    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['encoder_h2']), biases['encoder_b2']))
-    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights['encoder_h3']), biases['encoder_b3']))
-    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights['encoder_h4']), biases['encoder_b4']))
-    layer_5 = tf.add(tf.matmul(layer_4, weights['encoder_h5']), biases['encoder_b5'])
-    return layer_5
+    layer_2 = tf.add(tf.matmul(layer_1, weights['encoder_h2']), biases['encoder_b2'])
+    return layer_2
 
 # Building the decoder
 def decoder(x):
@@ -196,10 +158,7 @@ def decoder(x):
     layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights['decoder_h1']), biases['decoder_b1']))
     # Decoder Hidden layer with tanh activation #2
     layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['decoder_h2']), biases['decoder_b2']))
-    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights['decoder_h3']), biases['decoder_b3']))
-    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights['decoder_h4']), biases['decoder_b4']))
-    layer_5 = tf.nn.tanh(tf.add(tf.matmul(layer_4, weights['decoder_h5']), biases['decoder_b5']))
-    return layer_5
+    return layer_2
 
 # Building the encoder
 def encoder1(x):
@@ -207,10 +166,7 @@ def encoder1(x):
     layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights1['encoder_h1']), biases1['encoder_b1']))
     # Decoder Hidden layer with tanh activation #2
     layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2']))
-    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights1['encoder_h3']), biases1['encoder_b3']))
-    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights1['encoder_h4']), biases1['encoder_b4']))
-    layer_5 = tf.add(tf.matmul(layer_4, weights1['encoder_h5']), biases1['encoder_b5'])
-    return layer_5
+    return layer_2
 
 # Building the decoder
 def decoder1(x):
@@ -218,10 +174,7 @@ def decoder1(x):
     layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights1['decoder_h1']), biases1['decoder_b1']))
     # Decoder Hidden layer with tanh activation #2
     layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights1['decoder_h2']), biases1['decoder_b2']))
-    layer_3 = tf.nn.tanh(tf.add(tf.matmul(layer_2, weights1['decoder_h3']), biases1['decoder_b3']))
-    layer_4 = tf.nn.tanh(tf.add(tf.matmul(layer_3, weights1['decoder_h4']), biases1['decoder_b4']))
-    layer_5 = tf.nn.tanh(tf.add(tf.matmul(layer_4, weights1['decoder_h5']), biases1['decoder_b5']))
-    return layer_5
+    return layer_2
 
 def GetP(encoded1, encoded2):
     return tf.div(tf.constant(1.0), tf.add(tf.constant(1.0), tf.exp(tf.negative(tf.matmul(encoded1, tf.transpose(encoded2))))))
@@ -255,8 +208,6 @@ def OutputFile(data, data1):
     filename = 'data/citeseer/output.embeddings'
     with open(filename,'w') as f:
         for i in range(len(data)):
-            f.write(number[i])
-            f.write(" ")
             for j in range(len(data[i])):
                 f.write(str(data[i][j]))
                 f.write(" ")
@@ -303,7 +254,7 @@ with tf.Session() as sess:
     # Training
     num_steps = int(len(number) / batch_size)
 
-    for i in range(1, 3):
+    for i in range(1, 30):
         # Prepare Data
         # Get the next batch of MNIST data (only images are needed, not labels)
         # batch_x, _ = mnist.train.next_batch(batch_size)
