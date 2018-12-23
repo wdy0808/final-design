@@ -31,7 +31,7 @@ with open(embedding_file_name) as f:
             datas[index].append(float(d))
         index = index + 1
 
-percent = [0.1, 0.3, 0.5]
+percent = [0.9, 0.7, 0.5]
 
 for train_perc in percent:
 

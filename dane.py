@@ -2,70 +2,54 @@ from __future__ import division, print_function, absolute_import
 
 import tensorflow as tf
 import numpy as np
-from collections import defaultdict, Iterable
 
-number = [];
+number = []
+number_of_nodes = 3312
+number_of_attribute = 3703
 
-class Graph(defaultdict): 
-    def __init__(self):
-        super(Graph, self).__init__(list) #构建的图是一个字典，key是节点，key对应的value是list
-
-    def node_int_value(self, node, flag):
-        global number
-        try:
-            int_value = number.index(node)
-        except ValueError:
-            if flag == True:
-                int_value = len(number)
-                number.append(node)
-            else:
-                int_value = -1
-        return int_value
-
-    def ToMatrix(self, dimen):
-        lists = [[] for i in range(len(number))]
-        for i in range(len(number)):
-            data = [0.0] * dimen
-            for j in self[i]:
-                data[j] = 1.0
-            lists[i]=data
-        return lists
-
-    def nodes(self):
-        return self.keys()
+def node_int_value(node, flag):
+    try:
+        int_value = number.index(node)
+    except ValueError:
+        if flag == True:
+            int_value = len(number)
+            number.append(node)
+        else:
+            int_value = -1
+    return int_value
 
 def load_edgelist(file_, undirected=True):
-    G = Graph()
+    map_edge = [[0] * number_of_nodes for i in range(number_of_nodes)]
     with open(file_) as f:
         for l in f:
             x, y = l.strip().split()[:2]
-            x = G.node_int_value(x, False)
-            y = G.node_int_value(y, False)
-            if x != -1 & y != -1:
-                G[y].append(x)
-                if undirected:
-                    G[x].append(y)
-    
-    return G
+            x = node_int_value(x, False)
+            y = node_int_value(y, False)
+            if x == -1:
+                continue
+            if y == -1:
+                continue
+            map_edge[y][x] = 1
+            if undirected:
+                map_edge[x][y] = 1
+    return map_edge
 
 def load_citeseer_content(file):
-    G = Graph()
+    map_attribute = [[0] * number_of_attribute for i in range(number_of_nodes)]
     with open(file) as f:
         for l in f:
             line = l.strip().split()
-            paper_id = G.node_int_value(line[0], True)
+            paper_id = node_int_value(line[0], True)
             line = line[1:]
             for i in range(len(line)):
                 if line[i] == '1':
-                    G[paper_id].append(i)
-                elif line[i] == '0':
-                    continue
-    return G
+                    map_attribute[paper_id][i] = 1
+    return map_attribute
 
 def GetTransitionMatrix(matrix, m):
     m1 = np.array(matrix)
     m2 = np.array(m)
-    t = np.dot(m2, m1)
+    t = np.multiply(m2, m1)
     return t
 
 def FromEToM(e, t):
@@ -74,30 +58,31 @@ def FromEToM(e, t):
     for i in range(1, t):
         step = GetTransitionMatrix(e, step.tolist())
         ans = ans + step
+    amax, amin = ans.max(), ans.min()
+    ans = (ans - amin) / (amax - amin)
     return ans.tolist()
 
 def ReverseMatric(adj):
     reverse_metric = [[] for i in range(len(adj))]
-    binary_metric = [[] for i in range(len(adj))]
+    diagronal_matrix = [[] for i in range(len(adj))]
     for i in range(len(adj)):
+        tem = [0] * len(adj[i])
         for j in range(len(adj[i])):
             if adj[i][j] == 1:
                 reverse_metric[i].append(0.0)
-                binary_metric[i].append(-1.0)
             else:
                 reverse_metric[i].append(1.0)
-                binary_metric[i].append(1.0)
-    return reverse_metric, binary_metric
+        tem[i] = 1
+        diagronal_matrix[i] = tem
+    return reverse_metric, diagronal_matrix
 
-A = load_citeseer_content("./data/citeseer/citeseer.content")
-print("Number of attribute structure nodes: {}".format(len(A.nodes())))
-G = A.ToMatrix(3703)
+matrix_attribute = load_citeseer_content("./data/citeseer/citeseer.content")
+print("Number of attribute structure nodes: ")
 
-Edge_graph = load_edgelist("./data/citeseer/citeseer.cites", undirected=True)
-print("Number of topological structure nodes: {}".format(len(Edge_graph.nodes())))
-One_hot = Edge_graph.ToMatrix(len(number))
-One_hot_reverse, One_hot_binary = ReverseMatric(One_hot)
-M = FromEToM(One_hot, 5)
+matrix_topology = load_edgelist("./data/citeseer/citeseer.cites", undirected=True)
+print("Number of topological structure nodes: ")
+matrix_topology_reverse, Diagonal_matrix = ReverseMatric(matrix_topology)
+matrix_attribute_high_order = FromEToM(matrix_topology, 5)
 print("Finish Geting High Order Matrix-M")
     
 # Training Parameters
@@ -112,36 +97,35 @@ examples_to_show = 10
 n_hidden_1 = 500 # 1st layer num features
 n_hidden_2 = 200 # 1st layer num features
 n_hidden_3 = 100 # 2nd layer num features
-num_input = 3703 # MNIST data input (img shape: 28*28)
 
 # tf Graph input (only pictures)
-X = tf.placeholder("float", [None, num_input])
-X1 = tf.placeholder("float", [None, len(number)])
+X_attribute = tf.placeholder("float", [None, number_of_attribute])
+X_topology = tf.placeholder("float", [None, number_of_nodes])
 
 weights = {
-    'encoder_h1': tf.Variable(tf.truncated_normal([num_input, n_hidden_1])),
+    'encoder_h1': tf.Variable(tf.truncated_normal([number_of_attribute, n_hidden_1])),
     'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, n_hidden_3])),
     'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_1])),
-    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, num_input])),
+    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, number_of_attribute])),
 }
 biases = {
     'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
     'encoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
     'decoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b2': tf.Variable(tf.random_normal([num_input])),
+    'decoder_b2': tf.Variable(tf.random_normal([number_of_attribute])),
 }
 
 weights1 = {
-    'encoder_h1': tf.Variable(tf.truncated_normal([len(number), n_hidden_2])),
+    'encoder_h1': tf.Variable(tf.truncated_normal([number_of_nodes, n_hidden_2])),
     'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_3])),
     'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_2])),
-    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_2, len(number)])),
+    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_2, number_of_nodes])),
 }
 biases1 = {
     'encoder_b1': tf.Variable(tf.random_normal([n_hidden_2])),
     'encoder_b2': tf.Variable(tf.random_normal([n_hidden_3])),
     'decoder_b1': tf.Variable(tf.random_normal([n_hidden_2])),
-    'decoder_b2': tf.Variable(tf.random_normal([len(number)])),
+    'decoder_b2': tf.Variable(tf.random_normal([number_of_nodes])),
 }
 
 # Building the encoder
@@ -165,7 +149,7 @@ def encoder1(x):
     # Encoder Hidden layer with tanh activation #1
     layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights1['encoder_h1']), biases1['encoder_b1']))
     # Decoder Hidden layer with tanh activation #2
-    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2']))
+    layer_2 = tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2'])
     return layer_2
 
 # Building the decoder
@@ -177,23 +161,27 @@ def decoder1(x):
     return layer_2
 
 def GetP(encoded1, encoded2):
-    return tf.div(tf.constant(1.0), tf.add(tf.constant(1.0), tf.exp(tf.negative(tf.matmul(encoded1, tf.transpose(encoded2))))))
+    return tf.reciprocal(tf.add(tf.constant(1.0), tf.exp(tf.negative(tf.matmul(encoded1, tf.transpose(encoded2))))))
 
 def GetFirstOrder(H):
-    return tf.negative(tf.reduce_sum(tf.log(tf.add(tf.multiply(H, One_hot), One_hot_reverse))))
+    return tf.negative(tf.reduce_sum(tf.multiply(tf.log(H), matrix_topology)))
 
-def GetConsistent(H):
-    later = tf.negative(tf.reduce_sum(tf.log(tf.add(tf.multiply(tf.subtract(tf.constant(1.0), H), One_hot_reverse), One_hot))))
-    return tf.add(GetFirstOrder(H), later)
-    '''former = tf.reduce_sum(tf.log(H))
-    later = tf.reduce_sum(tf.log(tf.subtract(tf.constant(1.0), tf.multiply(H, One_hot_reverse))))
-    #return tf.negative(former)
-    return tf.subtract(later, former)'''
+def GetMinJ(P):
+    p = tf.add(P, tf.multiply(100.0, matrix_topology))
+    return tf.one_hot(indices=tf.argmin(p, axis=1), depth=number_of_nodes, dtype=tf.float32)
+
+def GetConsistent(H, P):
+    former = tf.negative(tf.reduce_sum(tf.multiply(tf.log(H), Diagonal_matrix)))
+    index = GetMinJ(P)
+    later = tf.negative(tf.reduce_sum(tf.multiply(tf.log(tf.subtract(1.0, H)), index)))
+    #later = tf.negative(tf.reduce_sum(tf.multiply(tf.log(H), matrix_topology_reverse)))
+    return tf.add(former, later)
 
 def GetCost(encodedM, encodedZ):
     Pmm = GetP(encodedM, encodedM)
     Pzz = GetP(encodedZ, encodedZ)
     Pmz = GetP(encodedM, encodedZ)
+    P = tf.matmul(encodedM, tf.transpose(encodedZ))
 
     first_order_cost_m = GetFirstOrder(Pmm)
     first_order_cost_z = GetFirstOrder(Pzz)
@@ -202,7 +190,7 @@ def GetCost(encodedM, encodedZ):
 
     #return first_order_cost
     #return GetConsistent(Pmz)
-    return tf.add(first_order_cost, GetConsistent(Pmz))
+    return tf.add(first_order_cost, GetConsistent(Pmz, P))
 
 def OutputFile(data, data1):
     filename = 'data/citeseer/output.embeddings'
@@ -218,25 +206,26 @@ def OutputFile(data, data1):
     f.close()
 
 # Construct model
-encoder_op = encoder(X)
+encoder_op = encoder(X_attribute)
 decoder_op = decoder(encoder_op)
 
 # Prediction
 y_pred = decoder_op
 # Targets (Labels) are the input data.
-y_true = X
+y_true = X_attribute
 
 # Construct model
-encoder_op1 = encoder1(X1)
+encoder_op1 = encoder1(X_topology)
 decoder_op1 = decoder1(encoder_op1)
 
 # Prediction
 y_pred1 = decoder_op1
 # Targets (Labels) are the input data.
-y_true1 = X1
+y_true1 = X_topology
 
 # Define loss and optimizer, minimize the squared error
-loss = tf.add(tf.reduce_mean(tf.pow(y_true - y_pred, 2)), tf.reduce_mean(tf.pow(y_true1 - y_pred1, 2)))
+#loss = tf.reduce_mean(tf.pow(y_true1 - y_pred1, 2))
+loss = tf.add(tf.reduce_sum(tf.pow(y_true - y_pred, 2)), tf.reduce_sum(tf.pow(y_true1 - y_pred1, 2)))
 loss = tf.add(loss, GetCost(tf.nn.softmax(encoder_op1), tf.nn.softmax(encoder_op)))
 optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
@@ -255,48 +244,11 @@ with tf.Session() as sess:
     num_steps = int(len(number) / batch_size)
 
     for i in range(1, 30):
-        # Prepare Data
-        # Get the next batch of MNIST data (only images are needed, not labels)
-        # batch_x, _ = mnist.train.next_batch(batch_size)
-        batch_x = np.array(G[0: 3312])
-        batch_x1 = np.array(M[0: 3312])
-        index += batch_size
         # Run optimization op (backprop) and cost op (to get loss value)
-        _, l = sess.run([optimizer, loss], feed_dict={X: batch_x, X1: batch_x1})
+        _, l = sess.run([optimizer, loss], feed_dict={X_attribute: matrix_attribute, X_topology: matrix_attribute_high_order})
         # Display logs per step
         #if i % display_step == 0 or i == 1:
         print('Step %i: Minibatch Loss: %f' % (i, l))
-    encoder_result = sess.run(encoder_op, feed_dict={X: G})
-    encoder_result1 = sess.run(encoder_op1, feed_dict={X1: M})
+    encoder_result = sess.run(encoder_op, feed_dict={X_attribute: matrix_attribute})
+    encoder_result1 = sess.run(encoder_op1, feed_dict={X_topology: matrix_attribute_high_order})
     OutputFile(encoder_result.tolist(), encoder_result1.tolist())
-    # Testing
-    # Encode and decode images from test set and visualize their reconstruction.
-    '''n = 4
-    canvas_orig = np.empty((28 * n, 28 * n))
-    canvas_recon = np.empty((28 * n, 28 * n))
-    for i in range(n):
-        # MNIST test set
-        batch_x, _ = mnist.test.next_batch(n)
-        # Encode and decode the digit image
-        g = sess.run(decoder_op, feed_dict={X: batch_x})
-
-        # Display original images
-        for j in range(n):
-            # Draw the original digits
-            canvas_orig[i * 28:(i + 1) * 28, j * 28:(j + 1) * 28] = \
-                batch_x[j].reshape([28, 28])
-        # Display reconstructed images
-        for j in range(n):
-            # Draw the reconstructed digits
-            canvas_recon[i * 28:(i + 1) * 28, j * 28:(j + 1) * 28] = \
-                g[j].reshape([28, 28])
-
-    print("Original Images")
-    plt.figure(figsize=(n, n))
-    plt.imshow(canvas_orig, origin="upper", cmap="gray")
-    plt.show()
-
-    print("Reconstructed Images")
-    plt.figure(figsize=(n, n))
-    plt.imshow(canvas_recon, origin="upper", cmap="gray")
-    plt.show()'''
