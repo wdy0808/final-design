@@ -3,10 +3,10 @@ from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
 
-label_file_name = "./data/citeseer/citeseer.content"
-embedding_file_name = "data/citeseer/output.embeddings"
+label_file_name = "./data/cora/cora.content"
+embedding_file_name = "data/cora/output.embeddings"
 labels = []
-datas = [[] for i in range(3312)]
+datas = [[] for i in range(2708)]
 
 with open(label_file_name) as f:
     index = 0
@@ -14,12 +14,13 @@ with open(label_file_name) as f:
         data = line.strip().split()[-1]
         labels.append(
             {
-                'Agents': 0,
-                'AI': 1,
-                'DB': 2,
-                'IR': 3,
-                'ML': 4,
-                'HCI': 5
+                'Case_Based': 0,
+                'Genetic_Algorithms': 1,
+                'Neural_Networks': 2,
+                'Probabilistic_Methods': 3,
+                'Reinforcement_Learning': 4,
+                'Rule_Learning': 5,
+                'Theory': 6
             }.get(data, 0)*1.0
         )
 
@@ -39,8 +40,8 @@ for train_perc in percent:
         datas, labels, test_size=train_perc, random_state=42)
 
     classifier = LogisticRegression(penalty='l2')
-    #cross_val_score(classifier, Data_train, label_train, cv=5)
-    classifier.fit(Data_train, label_train)
-    x = classifier.predict(Data_test) 
+    scores = cross_val_score(classifier, Data_train, label_train, cv=5)
+    #classifier.fit(Data_train, label_train)
+    #x = classifier.predict(Data_test) 
 
-    print(metrics.f1_score(label_test, x, average='micro'))
+    print(scores)
