@@ -218,7 +218,7 @@ y_pred1 = decoder_op1
 y_true1 = X_topology
 
 # Define loss and optimizer, minimize the squared error
-loss = tf.add(tf.reduce_sum(tf.pow(y_true - y_pred, 2)), tf.reduce_sum(tf.pow(y_true1 - y_pred1, 2)))
+loss = tf.add(tf.reduce_sum(tf.pow(tf.div(y_true - y_pred, 100), 2)), tf.reduce_sum(tf.pow(tf.div(y_true1 - y_pred1, 100), 2)))
 loss = tf.add(loss, GetCost(encoder_op1, encoder_op))
 optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
