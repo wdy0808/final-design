@@ -59,7 +59,7 @@ def Normalization(matrix):
     return matrix
 
 def FromEToM(e, t):
-    e = Normalization(np.array(e))
+    e = Normalization(np.array(e, dtype=float))
     ans = GetTransitionMatrix(e, e)
     step = ans
     for i in range(1, t):
@@ -89,9 +89,9 @@ def OutputFile(data, data1):
             for j in range(len(data[i])):
                 f.write(str(data[i][j]))
                 f.write(" ")
-            #for j in range(len(data1[i])):
-             #   f.write(str(data1[i][j]))
-              #  f.write(" ")
+            for j in range(len(data1[i])):
+                f.write(str(data1[i][j]))
+                f.write(" ")
             f.write("\n")
     f.close()
 
@@ -119,29 +119,29 @@ X_attribute = tf.placeholder(tf.float32, [None, number_of_attribute])
 X_topology = tf.placeholder(tf.float32, [None, number_of_nodes])
 
 weights = {
-    'encoder_h1': tf.Variable(tf.truncated_normal([number_of_attribute, n_hidden_attribute])),
-    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_attribute, n_hidden_encode])),
-    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_encode, n_hidden_attribute])),
-    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_attribute, number_of_attribute])),
+    'encoder_h1': tf.Variable(tf.random_normal([number_of_attribute, n_hidden_attribute])),
+    'encoder_h2': tf.Variable(tf.random_normal([n_hidden_attribute, n_hidden_encode])),
+    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_encode, n_hidden_attribute])),
+    'decoder_h2': tf.Variable(tf.random_normal([n_hidden_attribute, number_of_attribute])),
 }
 biases = {
-    'encoder_b1': tf.Variable(tf.random_normal([n_hidden_attribute])),
-    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_encode])),
-    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_attribute])),
-    'decoder_b2': tf.Variable(tf.random_normal([number_of_attribute])),
+    'encoder_b1': tf.Variable(tf.zeros([n_hidden_attribute])),
+    'encoder_b2': tf.Variable(tf.zeros([n_hidden_encode])),
+    'decoder_b1': tf.Variable(tf.zeros([n_hidden_attribute])),
+    'decoder_b2': tf.Variable(tf.zeros([number_of_attribute])),
 }
 
 weights1 = {
-    'encoder_h1': tf.Variable(tf.truncated_normal([number_of_nodes, n_hidden_topology])),
-    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_topology, n_hidden_encode])),
-    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_encode, n_hidden_topology])),
-    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_topology, number_of_nodes])),
+    'encoder_h1': tf.Variable(tf.random_normal([number_of_nodes, n_hidden_topology])),
+    'encoder_h2': tf.Variable(tf.random_normal([n_hidden_topology, n_hidden_encode])),
+    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_encode, n_hidden_topology])),
+    'decoder_h2': tf.Variable(tf.random_normal([n_hidden_topology, number_of_nodes])),
 }
 biases1 = {
-    'encoder_b1': tf.Variable(tf.random_normal([n_hidden_topology])),
-    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_encode])),
-    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_topology])),
-    'decoder_b2': tf.Variable(tf.random_normal([number_of_nodes])),
+    'encoder_b1': tf.Variable(tf.zeros([n_hidden_topology])),
+    'encoder_b2': tf.Variable(tf.zeros([n_hidden_encode])),
+    'decoder_b1': tf.Variable(tf.zeros([n_hidden_topology])),
+    'decoder_b2': tf.Variable(tf.zeros([number_of_nodes])),
 }
 
 # Building the encoder
