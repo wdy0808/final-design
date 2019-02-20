@@ -110,7 +110,7 @@ learning_rate = 0.01
 num_steps = 30000
 
 # Network Parameters
-n_hidden_attribute = 500 # 1st layer num features
+n_hidden_attribute = 200 # 1st layer num features
 n_hidden_topology = 200 # 1st layer num features
 n_hidden_encode = 100 # 2nd layer num features
 
@@ -232,7 +232,7 @@ with tf.Session() as sess:
     # Run the initializer
     sess.run(init)
 
-    for i in range(1, 30):
+    for i in range(1, 50):
         # Run optimization op (backprop) and cost op (to get loss value)
         _, l = sess.run([optimizer, loss], feed_dict={X_attribute: matrix_attribute, X_topology: matrix_attribute_high_order})
 
