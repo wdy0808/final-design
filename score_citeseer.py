@@ -33,7 +33,8 @@ with open(embedding_file_name) as f:
         index = index + 1
 
 percent = [0.9, 0.7, 0.5]
-scores = [[]]
+scores_micro = []
+scores_macro = []
 
 for train_perc in percent:
 
@@ -43,11 +44,12 @@ for train_perc in percent:
     classifier = LogisticRegression(penalty='l2')
     scorer_micro = make_scorer(f1_score, average='micro')
     scorer_macro = make_scorer(f1_score, average='macro')
-    scores_micro = cross_val_score(classifier, Data_train, label_train, cv=5, scoring=scorer_micro)
-    scores_macro = cross_val_score(classifier, Data_train, label_train, cv=5, scoring=scorer_macro)
-    #classifier.fit(Data_train, label_train)
-    #x = classifier.predict(Data_test) 
-    scores.append(scores_micro)
-    scores.append(scores_macro)
+    cross_val_score(classifier, Data_train, label_train, cv=5)
+    cross_val_score(classifier, Data_train, label_train, cv=5)
+    classifier.fit(Data_train, label_train)
+    x = classifier.predict(Data_test) 
+    scores_micro.append(f1_score(label_test, x, average='micro'))
+    scores_macro.append(f1_score(label_test, x, average='macro'))
 
-print(scores)
+print(scores_micro)
+print(scores_macro)
