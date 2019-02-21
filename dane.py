@@ -70,17 +70,13 @@ def FromEToM(e, t):
 
 def ReverseMatric(adj):
     reverse_metric = [[] for i in range(len(adj))]
-    diagronal_matrix = [[] for i in range(len(adj))]
     for i in range(len(adj)):
-        tem = [0] * len(adj[i])
         for j in range(len(adj[i])):
             if adj[i][j] == 1:
                 reverse_metric[i].append(0.0)
             else:
                 reverse_metric[i].append(1.0)
-        tem[i] = 1
-        diagronal_matrix[i] = tem
-    return reverse_metric, diagronal_matrix
+    return reverse_metric
 
 def OutputFile(data, data1):
     filename = 'data/cora/output.embeddings'
@@ -100,7 +96,9 @@ print("Input attribute data done")
 
 matrix_topology = load_edgelist("./data/cora/cora.cites", undirected=False)
 print("Input topological structure data done")
-matrix_topology_reverse, Diagonal_matrix = ReverseMatric(matrix_topology)
+matrix_topology_reverse = ReverseMatric(matrix_topology)
+Diagonal_matrix = np.diag(np.ones(number_of_nodes))
+
 matrix_attribute_high_order = FromEToM(matrix_topology, 10)
 print("Finish Geting High Order Matrix-M")
     
@@ -178,7 +176,7 @@ def GetFirstOrder(H):
     return tf.negative(tf.reduce_sum(tf.multiply(tf.log(H), matrix_topology)))
 
 def GetMinJ(P):
-    p = tf.add(P, tf.multiply(100.0, matrix_topology))
+    p = tf.add(P, tf.multiply(float('inf'), matrix_topology))
     return tf.one_hot(indices=tf.argmin(p, axis=1), depth=number_of_nodes, dtype=tf.float32)
 
 def GetConsistent(H, P):
