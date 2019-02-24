@@ -144,39 +144,39 @@ biases1 = {
 
 # Building the encoder
 def encoder(x):
-    # Encoder Hidden layer with leaky_relu activation #1
-    layer_1 = tf.nn.leaky_relu(tf.add(tf.matmul(x, weights['encoder_h1']), biases['encoder_b1']))
-    # Decoder Hidden layer with leaky_relu activation #2
-    layer_2 = tf.nn.leaky_relu(tf.add(tf.matmul(layer_1, weights['encoder_h2']), biases['encoder_b2']))
+    # Encoder Hidden layer with tanh activation #1
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights['encoder_h1']), biases['encoder_b1']))
+    # Decoder Hidden layer with tanh activation #2
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['encoder_h2']), biases['encoder_b2']))
     return layer_2
 
 # Building the decoder
 def decoder(x):
-    # Encoder Hidden layer with leaky_relu activation #1
-    layer_1 = tf.nn.leaky_relu(tf.add(tf.matmul(x, weights['decoder_h1']), biases['decoder_b1']))
-    # Decoder Hidden layer with leaky_relu activation #2
-    layer_2 = tf.nn.leaky_relu(tf.add(tf.matmul(layer_1, weights['decoder_h2']), biases['decoder_b2']))
+    # Encoder Hidden layer with tanh activation #1
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights['decoder_h1']), biases['decoder_b1']))
+    # Decoder Hidden layer with tanh activation #2
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['decoder_h2']), biases['decoder_b2']))
     return layer_2
 
 def encoder1(x):
-    layer_1 = tf.nn.leaky_relu(tf.add(tf.matmul(x, weights1['encoder_h1']), biases1['encoder_b1']))
-    layer_2 = tf.nn.leaky_relu(tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2']))
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights1['encoder_h1']), biases1['encoder_b1']))
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights1['encoder_h2']), biases1['encoder_b2']))
     return layer_2
 
 def decoder1(x):
-    layer_1 = tf.nn.leaky_relu(tf.add(tf.matmul(x, weights1['decoder_h1']), biases1['decoder_b1']))
-    layer_2 = tf.nn.leaky_relu(tf.add(tf.matmul(layer_1, weights1['decoder_h2']), biases1['decoder_b2']))
+    layer_1 = tf.nn.tanh(tf.add(tf.matmul(x, weights1['decoder_h1']), biases1['decoder_b1']))
+    layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights1['decoder_h2']), biases1['decoder_b2']))
     return layer_2
 
 #object function.................................
 def GetP(encoded1, encoded2):
-    return tf.reciprocal(tf.add(tf.constant(1.0), tf.exp(tf.negative(tf.matmul(encoded1, tf.transpose(encoded2))))))
+    return tf.clip_by_value(tf.nn.sigmoid(tf.matmul(encoded1, tf.transpose(encoded2))), 0.0000000001, 0.9999999)
 
 def GetFirstOrder(H):
     return tf.negative(tf.reduce_sum(tf.multiply(tf.log(H), matrix_topology)))
 
 def GetMinJ(P):
-    p = tf.add(P, tf.multiply(float('inf'), matrix_topology))
+    p = tf.add(P, tf.multiply(1000000.0, matrix_topology))
     return tf.one_hot(indices=tf.argmin(p, axis=1), depth=number_of_nodes, dtype=tf.float32)
 
 def GetConsistent(H, P):
@@ -185,9 +185,26 @@ def GetConsistent(H, P):
     later = tf.negative(tf.reduce_sum(tf.multiply(tf.log(tf.subtract(1.0, H)), index)))
     return tf.add(former, later)
 
+def temWriteFile(data, name):
+    with open(name,'w') as f:
+        for i in range(len(data)):
+            for j in range(len(data[i])):
+                f.write(str(data[i][j]))
+                f.write(" ")
+            f.write("\n")
+    f.close()
+
+def temWriteFile1(data, name):
+    with open(name,'w') as f:
+        for i in range(len(data)):
+            f.write(str(data[i]))
+            for j in range(len(data[i])):
+                f.write(str(data[i][j]))
+                f.write(" ")
+            f.write("\n")
+    f.close()
+
 def GetCost(encodedM, encodedZ):
-    encodedM = tf.div(encodedM, 100)
-    encodedZ = tf.div(encodedZ, 100)
     Pmm = GetP(encodedM, encodedM)
     Pzz = GetP(encodedZ, encodedZ)
     Pmz = GetP(encodedM, encodedZ)
@@ -197,7 +214,19 @@ def GetCost(encodedM, encodedZ):
     first_order_cost_z = GetFirstOrder(Pzz)
     
     first_order_cost = tf.add(first_order_cost_m, first_order_cost_z)
+    return tf.add(first_order_cost, GetConsistent(Pmz, P))
 
+def GetCost1(encodedM, encodedZ):
+    Pmm = GetP(encodedM, encodedM)
+    Pzz = GetP(encodedZ, encodedZ)
+    Pmz = GetP(encodedM, encodedZ)
+    P = tf.matmul(encodedM, tf.transpose(encodedZ))
+
+    first_order_cost_m = GetFirstOrder(Pmm)
+    first_order_cost_z = GetFirstOrder(Pzz)
+    
+    first_order_cost = tf.add(first_order_cost_m, first_order_cost_z)
+    return tf.subtract(1.0, Pmz)
     return tf.add(first_order_cost, GetConsistent(Pmz, P))
 
 # Construct model...................................
@@ -212,11 +241,14 @@ y_true = X_attribute
 encoder_op1 = encoder1(X_topology)
 decoder_op1 = decoder1(encoder_op1)
 
+test = GetCost1(encoder_op1, encoder_op)
+test1 = GetCost(encoder_op1, encoder_op)
+
 y_pred1 = decoder_op1
 y_true1 = X_topology
 
 # Define loss and optimizer, minimize the squared error
-loss = tf.add(tf.reduce_sum(tf.pow(tf.div(y_true - y_pred, 100), 2)), tf.reduce_sum(tf.pow(tf.div(y_true1 - y_pred1, 100), 2)))
+loss = tf.add(tf.reduce_sum(tf.pow(y_true - y_pred, 2)), tf.reduce_sum(tf.pow(y_true1 - y_pred1, 2)))
 loss = tf.add(loss, GetCost(encoder_op1, encoder_op))
 optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
@@ -230,11 +262,15 @@ with tf.Session() as sess:
     # Run the initializer
     sess.run(init)
 
-    for i in range(1, 50):
+    for i in range(1, 10):
         # Run optimization op (backprop) and cost op (to get loss value)
         _, l = sess.run([optimizer, loss], feed_dict={X_attribute: matrix_attribute, X_topology: matrix_attribute_high_order})
 
         print('Step %i: Minibatch Loss: %f' % (i, l))
+    #a, b = sess.run([test, test1], feed_dict={X_attribute: matrix_attribute, X_topology: matrix_attribute_high_order})
+    #temWriteFile(a.tolist(), "Pmm.txt")
+    #temWriteFile(b.tolist(), "Pmmm.txt")
+    #print(b)
     encoder_result = sess.run(encoder_op, feed_dict={X_attribute: matrix_attribute})
     encoder_result1 = sess.run(encoder_op1, feed_dict={X_topology: matrix_attribute_high_order})
     OutputFile(encoder_result.tolist(), encoder_result1.tolist())
